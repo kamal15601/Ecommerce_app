@@ -1,0 +1,30 @@
+input {
+  file {
+    path => "/var/log/nginx/access.log"
+    start_position => "beginning"
+    type => "nginx-access"
+  }
+  
+  file {
+    path => "/var/log/nginx/error.log"
+    start_position => "beginning"
+    type => "nginx-error"
+  }
+  
+  file {
+    path => "/app/logs/*.log"
+    start_position => "beginning"
+    type => "application"
+  }
+}
+
+output {
+  elasticsearch {
+    hosts => ["elasticsearch:9200"]
+    index => "filebeat-%{+YYYY.MM.dd}"
+  }
+  
+  logstash {
+    hosts => ["logstash:5044"]
+  }
+}

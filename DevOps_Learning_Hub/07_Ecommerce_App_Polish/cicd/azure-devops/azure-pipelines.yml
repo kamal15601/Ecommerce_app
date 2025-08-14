@@ -1,0 +1,384 @@
+# azure-pipelines.yml - Complete CI/CD Pipeline for E-commerce Application
+
+trigger:
+  branches:
+    include:
+    - main
+    - develop
+    - feature/*
+  paths:
+    exclude:
+    - README.md
+    - docs/*
+
+variables:
+  # Build variables
+  buildConfiguration: 'Release'
+  vmImageName: 'ubuntu-latest'
+  
+  # Docker variables
+  containerRegistry: 'ecommerceregistry.azurecr.io'
+  backendImageName: 'ecommerce-backend'
+  frontendImageName: 'ecommerce-frontend'
+  imageTag: '$(Build.BuildId)'
+  
+  # Environment URLs
+  devUrl: 'https://dev-ecommerce.azurewebsites.net'
+  stagingUrl: 'https://staging-ecommerce.azurewebsites.net'
+  productionUrl: 'https://ecommerce.azurewebsites.net'
+
+stages:
+- stage: Build
+  displayName: 'Build Application'
+  jobs:
+  - job: BuildBackend
+    displayName: 'Build Backend'
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '3.9'
+        addToPath: true
+      displayName: 'Set up Python'
+    
+    - script: |
+        python -m pip install --upgrade pip
+        pip install -r src/backend/requirements.txt
+        pip install pytest pytest-cov pylint
+      displayName: 'Install dependencies'
+    
+    - script: |
+        pylint --disable=C0111 src/backend/app.py
+      displayName: 'Run linting'
+    
+    - script: |
+        pytest src/backend/tests/ --cov=src/backend --cov-report=xml
+      displayName: 'Run unit tests'
+    
+    - task: PublishCodeCoverageResults@1
+      inputs:
+        codeCoverageTool: 'cobertura'
+        summaryFileLocation: '$(System.DefaultWorkingDirectory)/coverage.xml'
+      displayName: 'Publish code coverage'
+    
+    - task: Docker@2
+      inputs:
+        containerRegistry: 'ecommerceAcr'
+        repository: '$(backendImageName)'
+        command: 'buildAndPush'
+        Dockerfile: 'src/backend/Dockerfile'
+        tags: |
+          $(imageTag)
+          latest
+      displayName: 'Build and push backend image'
+
+  - job: BuildFrontend
+    displayName: 'Build Frontend'
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '16.x'
+      displayName: 'Install Node.js'
+    
+    - script: |
+        cd src/frontend
+        npm install
+      displayName: 'Install npm packages'
+    
+    - script: |
+        cd src/frontend
+        npm run lint
+      displayName: 'Run linting'
+    
+    - script: |
+        cd src/frontend
+        npm test -- --coverage
+      displayName: 'Run unit tests'
+    
+    - task: Docker@2
+      inputs:
+        containerRegistry: 'ecommerceAcr'
+        repository: '$(frontendImageName)'
+        command: 'buildAndPush'
+        Dockerfile: 'src/frontend/Dockerfile'
+        tags: |
+          $(imageTag)
+          latest
+      displayName: 'Build and push frontend image'
+  
+  - job: SecurityScan
+    displayName: 'Security Scanning'
+    dependsOn: [BuildBackend, BuildFrontend]
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - task: DownloadSecureFile@1
+      name: trivyConfig
+      displayName: 'Download Trivy config'
+      inputs:
+        secureFile: 'trivy-config.yaml'
+    
+    - script: |
+        docker pull aquasec/trivy:latest
+        docker run --rm \
+          -v $(Agent.TempDirectory):/tmp \
+          aquasec/trivy:latest image \
+          --format json \
+          --output /tmp/trivy-results.json \
+          --severity HIGH,CRITICAL \
+          $(containerRegistry)/$(backendImageName):$(imageTag)
+      displayName: 'Scan backend container image'
+    
+    - script: |
+        docker run --rm \
+          -v $(Agent.TempDirectory):/tmp \
+          aquasec/trivy:latest image \
+          --format json \
+          --output /tmp/trivy-results-frontend.json \
+          --severity HIGH,CRITICAL \
+          $(containerRegistry)/$(frontendImageName):$(imageTag)
+      displayName: 'Scan frontend container image'
+    
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathtoPublish: '$(Agent.TempDirectory)/trivy-results.json'
+        artifactName: 'TrivyResults'
+      displayName: 'Publish security scan results'
+
+- stage: DeployToDev
+  displayName: 'Deploy to Development'
+  dependsOn: Build
+  condition: succeeded()
+  variables:
+    - group: dev-environment-variables
+  jobs:
+  - deployment: DeployToDev
+    displayName: 'Deploy to Dev environment'
+    environment: 'Development'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: KubernetesManifest@0
+            displayName: 'Deploy backend to AKS'
+            inputs:
+              action: 'deploy'
+              kubernetesServiceConnection: 'dev-aks-connection'
+              namespace: 'ecommerce-dev'
+              manifests: '$(Pipeline.Workspace)/manifests/backend.yaml'
+              containers: '$(containerRegistry)/$(backendImageName):$(imageTag)'
+          
+          - task: KubernetesManifest@0
+            displayName: 'Deploy frontend to AKS'
+            inputs:
+              action: 'deploy'
+              kubernetesServiceConnection: 'dev-aks-connection'
+              namespace: 'ecommerce-dev'
+              manifests: '$(Pipeline.Workspace)/manifests/frontend.yaml'
+              containers: '$(containerRegistry)/$(frontendImageName):$(imageTag)'
+          
+          - task: PowerShell@2
+            displayName: 'Run smoke tests'
+            inputs:
+              targetType: 'inline'
+              script: |
+                $statusCode = (Invoke-WebRequest -Uri "$(devUrl)/health" -UseBasicParsing).StatusCode
+                if ($statusCode -ne 200) {
+                  Write-Error "Health check failed with status code $statusCode"
+                  exit 1
+                }
+
+- stage: RunIntegrationTests
+  displayName: 'Run Integration Tests'
+  dependsOn: DeployToDev
+  condition: succeeded()
+  jobs:
+  - job: IntegrationTests
+    displayName: 'Execute integration tests'
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '3.9'
+        addToPath: true
+      displayName: 'Set up Python'
+    
+    - script: |
+        python -m pip install --upgrade pip
+        pip install -r tests/integration/requirements.txt
+        python -m pytest tests/integration --base-url $(devUrl)
+      displayName: 'Run API integration tests'
+    
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '16.x'
+      displayName: 'Install Node.js'
+    
+    - script: |
+        cd tests/e2e
+        npm install
+        npm run test:e2e -- --baseUrl $(devUrl)
+      displayName: 'Run E2E tests'
+
+- stage: DeployToStaging
+  displayName: 'Deploy to Staging'
+  dependsOn: RunIntegrationTests
+  condition: succeeded()
+  variables:
+    - group: staging-environment-variables
+  jobs:
+  - deployment: DeployToStaging
+    displayName: 'Deploy to Staging environment'
+    environment: 'Staging'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: KubernetesManifest@0
+            displayName: 'Deploy backend to AKS'
+            inputs:
+              action: 'deploy'
+              kubernetesServiceConnection: 'staging-aks-connection'
+              namespace: 'ecommerce-staging'
+              manifests: '$(Pipeline.Workspace)/manifests/backend.yaml'
+              containers: '$(containerRegistry)/$(backendImageName):$(imageTag)'
+          
+          - task: KubernetesManifest@0
+            displayName: 'Deploy frontend to AKS'
+            inputs:
+              action: 'deploy'
+              kubernetesServiceConnection: 'staging-aks-connection'
+              namespace: 'ecommerce-staging'
+              manifests: '$(Pipeline.Workspace)/manifests/frontend.yaml'
+              containers: '$(containerRegistry)/$(frontendImageName):$(imageTag)'
+          
+          - task: PowerShell@2
+            displayName: 'Verify deployment'
+            inputs:
+              targetType: 'inline'
+              script: |
+                $statusCode = (Invoke-WebRequest -Uri "$(stagingUrl)/health" -UseBasicParsing).StatusCode
+                if ($statusCode -ne 200) {
+                  Write-Error "Health check failed with status code $statusCode"
+                  exit 1
+                }
+
+- stage: RunPerformanceTests
+  displayName: 'Run Performance Tests'
+  dependsOn: DeployToStaging
+  condition: succeeded()
+  jobs:
+  - job: LoadTests
+    displayName: 'Execute load tests'
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - task: Bash@3
+      inputs:
+        targetType: 'inline'
+        script: |
+          # Install k6
+          sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+          
+          # Run load tests
+          k6 run tests/performance/load-test.js \
+            --out json=results.json \
+            --env BASE_URL=$(stagingUrl)
+      displayName: 'Run k6 load tests'
+    
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathtoPublish: 'results.json'
+        artifactName: 'LoadTestResults'
+      displayName: 'Publish load test results'
+
+- stage: DeployToProduction
+  displayName: 'Deploy to Production'
+  dependsOn: RunPerformanceTests
+  condition: succeeded()
+  variables:
+    - group: production-environment-variables
+  jobs:
+  - deployment: DeployToProduction
+    displayName: 'Deploy to Production environment'
+    environment: 'Production'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: KubernetesManifest@0
+            displayName: 'Deploy backend to AKS'
+            inputs:
+              action: 'deploy'
+              kubernetesServiceConnection: 'prod-aks-connection'
+              namespace: 'ecommerce-prod'
+              manifests: '$(Pipeline.Workspace)/manifests/backend.yaml'
+              containers: '$(containerRegistry)/$(backendImageName):$(imageTag)'
+          
+          - task: KubernetesManifest@0
+            displayName: 'Deploy frontend to AKS'
+            inputs:
+              action: 'deploy'
+              kubernetesServiceConnection: 'prod-aks-connection'
+              namespace: 'ecommerce-prod'
+              manifests: '$(Pipeline.Workspace)/manifests/frontend.yaml'
+              containers: '$(containerRegistry)/$(frontendImageName):$(imageTag)'
+          
+          - task: AzureCLI@2
+            displayName: 'Configure monitoring and alerts'
+            inputs:
+              azureSubscription: 'production-subscription'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                # Set up Application Insights availability tests
+                az monitor app-insights web-test create \
+                  --resource-group ecommerce-prod-rg \
+                  --app ecommerce-prod-ai \
+                  --name "ecommerce-health-check" \
+                  --location "East US" \
+                  --frequency 300 \
+                  --web-test-kind "ping" \
+                  --geo-locations "us-ca-sjc" "us-tx-sn1" "us-il-ch1" \
+                  --enabled true \
+                  --retry-enabled true \
+                  --timeout 120 \
+                  --web-test-properties "{\"Request\":{\"Url\":\"https://ecommerce.azurewebsites.net/health\"}}"
+                
+                # Set up CPU usage alert
+                az monitor metrics alert create \
+                  --name "High CPU Usage" \
+                  --resource-group ecommerce-prod-rg \
+                  --scopes "/subscriptions/$(subscription-id)/resourceGroups/ecommerce-prod-rg/providers/Microsoft.ContainerService/managedClusters/ecommerce-prod-aks" \
+                  --condition "avg Percentage CPU > 80" \
+                  --window-size 5m \
+                  --evaluation-frequency 1m \
+                  --action-group "/subscriptions/$(subscription-id)/resourceGroups/ecommerce-prod-rg/providers/Microsoft.Insights/actionGroups/devops-team" \
+                  --description "Alert when CPU usage exceeds 80%"
+          
+          - task: PowerShell@2
+            displayName: 'Run post-deployment validation'
+            inputs:
+              targetType: 'inline'
+              script: |
+                $statusCode = (Invoke-WebRequest -Uri "$(productionUrl)/health" -UseBasicParsing).StatusCode
+                if ($statusCode -ne 200) {
+                  Write-Error "Health check failed with status code $statusCode"
+                  exit 1
+                }
+                
+                # Additional validation checks
+                $productCatalog = (Invoke-WebRequest -Uri "$(productionUrl)/api/products" -UseBasicParsing).Content | ConvertFrom-Json
+                if ($productCatalog.Count -eq 0) {
+                  Write-Error "Product catalog is empty"
+                  exit 1
+                }
+                
+                Write-Host "Deployment validated successfully!"

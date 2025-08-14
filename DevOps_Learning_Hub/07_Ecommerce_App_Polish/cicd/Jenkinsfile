@@ -1,0 +1,233 @@
+pipeline {
+    agent {
+        kubernetes {
+            yaml """
+            apiVersion: v1
+            kind: Pod
+            metadata:
+              labels:
+                app: ecommerce-pipeline
+            spec:
+              containers:
+              - name: docker
+                image: docker:20.10.12-dind
+                command:
+                - cat
+                tty: true
+                securityContext:
+                  privileged: true
+              - name: kubectl
+                image: bitnami/kubectl:1.23.5
+                command:
+                - cat
+                tty: true
+              - name: node
+                image: node:16-alpine
+                command:
+                - cat
+                tty: true
+              - name: python
+                image: python:3.9-slim
+                command:
+                - cat
+                tty: true
+              - name: sonar-scanner
+                image: sonarsource/sonar-scanner-cli:4.7
+                command:
+                - cat
+                tty: true
+              - name: trivy
+                image: aquasec/trivy:0.24.3
+                command:
+                - cat
+                tty: true
+            """
+        }
+    }
+
+    environment {
+        DOCKER_REGISTRY = 'your-registry.example.com'
+        IMAGE_TAG = "${env.GIT_COMMIT.take(7)}"
+        APP_NAME = 'ecommerce'
+        SONAR_HOST_URL = 'http://sonarqube:9000'
+        SONAR_PROJECT_KEY = 'ecommerce-app'
+        DOCKER_BUILDKIT = '1'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Static Code Analysis') {
+            parallel {
+                stage('Backend Analysis') {
+                    steps {
+                        container('python') {
+                            dir('src/backend') {
+                                sh 'pip install pylint flake8 black'
+                                sh 'pylint --output-format=parseable --fail-under=7.0 *.py || true'
+                                sh 'flake8 --max-line-length=100 .'
+                                sh 'black --check --diff .'
+                            }
+                        }
+                    }
+                }
+
+                stage('Frontend Analysis') {
+                    steps {
+                        container('node') {
+                            dir('src/frontend') {
+                                sh 'npm install --no-audit'
+                                sh 'npm run lint || true'
+                            }
+                        }
+                    }
+                }
+
+                stage('SonarQube Analysis') {
+                    steps {
+                        container('sonar-scanner') {
+                            withSonarQubeEnv('SonarQube') {
+                                sh """
+                                sonar-scanner -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                                              -Dsonar.projectName='E-commerce Application' \
+                                              -Dsonar.sources=./src \
+                                              -Dsonar.exclusions=**/node_modules/**,**/*.test.js,**/*.spec.js \
+                                              -Dsonar.python.coverage.reportPaths=coverage.xml \
+                                              -Dsonar.javascript.lcov.reportPaths=src/frontend/coverage/lcov.info
+                                """
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Unit Tests') {
+            parallel {
+                stage('Backend Tests') {
+                    steps {
+                        container('python') {
+                            dir('src/backend') {
+                                sh 'pip install -r requirements.txt'
+                                sh 'pip install pytest pytest-cov'
+                                sh 'pytest --cov=. --cov-report=xml'
+                            }
+                        }
+                    }
+                }
+
+                stage('Frontend Tests') {
+                    steps {
+                        container('node') {
+                            dir('src/frontend') {
+                                sh 'npm test -- --coverage'
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Build Images') {
+            parallel {
+                stage('Build Backend') {
+                    steps {
+                        container('docker') {
+                            dir('src/backend') {
+                                sh """
+                                docker build -t ${DOCKER_REGISTRY}/${APP_NAME}-backend:${IMAGE_TAG} \
+                                             -t ${DOCKER_REGISTRY}/${APP_NAME}-backend:latest .
+                                """
+                            }
+                        }
+                    }
+                }
+
+                stage('Build Frontend') {
+                    steps {
+                        container('docker') {
+                            dir('src/frontend') {
+                                sh """
+                                docker build -t ${DOCKER_REGISTRY}/${APP_NAME}-frontend:${IMAGE_TAG} \
+                                             -t ${DOCKER_REGISTRY}/${APP_NAME}-frontend:latest .
+                                """
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Security Scan') {
+            steps {
+                container('trivy') {
+                    sh "trivy image --no-progress --exit-code 1 --severity HIGH,CRITICAL ${DOCKER_REGISTRY}/${APP_NAME}-backend:${IMAGE_TAG} || true"
+                    sh "trivy image --no-progress --exit-code 1 --severity HIGH,CRITICAL ${DOCKER_REGISTRY}/${APP_NAME}-frontend:${IMAGE_TAG} || true"
+                }
+            }
+        }
+
+        stage('Push Images') {
+            when {
+                branch 'main'
+            }
+            steps {
+                container('docker') {
+                    withCredentials([usernamePassword(credentialsId: 'docker-registry-credentials', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
+                        sh 'echo $DOCKER_PASSWORD | docker login $DOCKER_REGISTRY -u $DOCKER_USERNAME --password-stdin'
+                        sh "docker push ${DOCKER_REGISTRY}/${APP_NAME}-backend:${IMAGE_TAG}"
+                        sh "docker push ${DOCKER_REGISTRY}/${APP_NAME}-backend:latest"
+                        sh "docker push ${DOCKER_REGISTRY}/${APP_NAME}-frontend:${IMAGE_TAG}"
+                        sh "docker push ${DOCKER_REGISTRY}/${APP_NAME}-frontend:latest"
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            when {
+                branch 'main'
+            }
+            steps {
+                container('kubectl') {
+                    withKubeConfig([credentialsId: 'kubernetes-credentials', serverUrl: 'https://kubernetes.example.com']) {
+                        dir('infrastructure/kubernetes') {
+                            sh '''
+                            export DOCKER_REGISTRY=${DOCKER_REGISTRY}
+                            export IMAGE_TAG=${IMAGE_TAG}
+                            
+                            # Apply Kubernetes manifests
+                            envsubst < backend.yaml | kubectl apply -f -
+                            envsubst < frontend.yaml | kubectl apply -f -
+                            
+                            # Verify deployment
+                            kubectl rollout status deployment/backend -n ecommerce
+                            kubectl rollout status deployment/frontend -n ecommerce
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Pipeline completed.'
+            // Clean up workspace
+            cleanWs()
+        }
+        success {
+            echo 'Pipeline succeeded!'
+            // Send success notification
+        }
+        failure {
+            echo 'Pipeline failed!'
+            // Send failure notification
+        }
+    }
+}

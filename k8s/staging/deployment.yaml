@@ -1,0 +1,41 @@
+# Kubernetes Deployment for Staging
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ecommerce-backend-staging
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ecommerce-backend
+  template:
+    metadata:
+      labels:
+        app: ecommerce-backend
+    spec:
+      containers:
+      - name: backend
+        image: backend:staging
+        envFrom:
+        - configMapRef:
+            name: backend-config
+        ports:
+        - containerPort: 5000
+      - name: db
+        image: bitnami/postgresql:16.1.0
+        env:
+        - name: POSTGRESQL_DATABASE
+          value: ecommerce
+        - name: POSTGRESQL_USERNAME
+          value: admin
+        - name: POSTGRES_PASSWORD
+          value: adminpass
+        ports:
+        - containerPort: 5432
+      - name: frontend
+        image: frontend:staging
+        envFrom:
+        - configMapRef:
+            name: frontend-config
+        ports:
+        - containerPort: 3000

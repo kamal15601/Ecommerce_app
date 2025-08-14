@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ product.name }} - Ecommerce</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <h1>{{ product.name }}</h1>
+    <p>{{ product.description }}</p>
+    <p>Price: ${{ product.price }}</p>
+    <h2>Images</h2>
+    {% for image in images %}
+        <img src="{{ image.image_url }}" alt="Product Image" width="150" />
+    {% endfor %}
+    <h2>Reviews</h2>
+    {% for review in reviews %}
+        <p>{{ review.user.username }}: {{ review.rating }} stars - {{ review.comment }}</p>
+    {% endfor %}
+    <a href="{{ url_for('views.home') }}">Back to Home</a>
+</body>
+</html>

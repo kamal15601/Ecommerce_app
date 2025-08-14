@@ -1,0 +1,14 @@
+{
+  "SamplingRule": {
+    "rule_name": "ecommerce-app-sampling",
+    "priority": 9000,
+    "fixed_rate": 0.1,
+    "reservoir_size": 1,
+    "service_name": "ecommerce-*",
+    "service_type": "*",
+    "host": "*",
+    "method": "*",
+    "url_path": "*",
+    "version": 1
+  }
+}

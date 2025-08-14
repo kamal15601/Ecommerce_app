@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentType": {
+      "value": "dev"
+    },
+    "prefix": {
+      "value": "ecommerce"
+    },
+    "location": {
+      "value": "eastus"
+    },
+    "aksNodeCount": {
+      "value": 1
+    },
+    "aksNodeSize": {
+      "value": "Standard_D2s_v3"
+    },
+    "postgreSqlSkuName": {
+      "value": "B_Gen5_1"
+    },
+    "redisCacheSku": {
+      "value": "Basic"
+    },
+    "redisCacheCapacity": {
+      "value": 0
+    },
+    "appInsightsRetentionDays": {
+      "value": 30
+    }
+  }
+}

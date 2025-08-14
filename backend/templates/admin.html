@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Dashboard - Ecommerce</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <h1>Admin Dashboard</h1>
+    <a href="{{ url_for('views.home') }}">Home</a> | <a href="{{ url_for('views.logout') }}">Logout</a>
+    
+    <h2>Products ({{ products|length }})</h2>
+    <ul>
+        {% for product in products %}
+        <li>{{ product.name }} - ${{ product.price }}</li>
+        {% endfor %}
+    </ul>
+    
+    <h2>Categories ({{ categories|length }})</h2>
+    <ul>
+        {% for category in categories %}
+        <li>{{ category.name }}</li>
+        {% endfor %}
+    </ul>
+    
+    <h2>Orders ({{ orders|length }})</h2>
+    <ul>
+        {% for order in orders %}
+        <li>Order #{{ order.id }} - ${{ order.total }} - {{ order.status }}</li>
+        {% endfor %}
+    </ul>
+</body>
+</html>

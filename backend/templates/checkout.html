@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Checkout - Ecommerce</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <h1>Checkout</h1>
+    <a href="{{ url_for('views.cart') }}">Back to Cart</a>
+    
+    <h2>Order Summary</h2>
+    {% for item in cart_items %}
+        <p>{{ item.product.name }} - ${{ item.product.price }} x {{ item.quantity }}</p>
+    {% endfor %}
+    <p><strong>Total: ${{ total }}</strong></p>
+    
+    <h2>Payment Information</h2>
+    <form method="post">
+        <label>Card Number:</label><input type="text" name="card_number" required><br>
+        <label>Expiry Date:</label><input type="text" name="expiry" placeholder="MM/YY" required><br>
+        <label>CVV:</label><input type="text" name="cvv" required><br>
+        <button type="submit">Place Order</button>
+    </form>
+</body>
+</html>

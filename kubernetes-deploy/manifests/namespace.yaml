@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ecommerce
+  labels:
+    name: ecommerce
+    app: ecommerce
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ecommerce-dev
+  labels:
+    name: ecommerce-dev
+    app: ecommerce
+    environment: development
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ecommerce-staging
+  labels:
+    name: ecommerce-staging
+    app: ecommerce
+    environment: staging
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ecommerce-prod
+  labels:
+    name: ecommerce-prod
+    app: ecommerce
+    environment: production

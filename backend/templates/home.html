@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Home - Ecommerce</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <h1>E-Commerce Store</h1>
+    <nav>
+        {% if session.get('user_id') %}
+            Welcome, {{ session.get('username') }}! | 
+            <a href="{{ url_for('views.cart') }}">Cart</a> | 
+            <a href="{{ url_for('views.wishlist') }}">Wishlist</a> | 
+            {% if session.get('is_admin') %}<a href="{{ url_for('views.admin') }}">Admin</a> | {% endif %}
+            <a href="{{ url_for('views.logout') }}">Logout</a>
+        {% else %}
+            <a href="{{ url_for('views.login') }}">Login</a> | <a href="{{ url_for('views.signup') }}">Signup</a>
+        {% endif %}
+    </nav>
+    
+    <h2>Products</h2>
+    {% if products %}
+        <div class="products">
+            {% for product in products %}
+            <div class="product-card">
+                <h3><a href="{{ url_for('views.product_detail', product_id=product.id) }}">{{ product.name }}</a></h3>
+                <p>Price: ${{ product.price }}</p>
+                <p>{{ product.description[:100] }}...</p>
+            </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p>No products available. <a href="{{ url_for('views.admin') }}">Add some products</a> if you're an admin.</p>
+    {% endif %}
+</body>
+</html>

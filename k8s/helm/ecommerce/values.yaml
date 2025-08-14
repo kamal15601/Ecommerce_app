@@ -1,0 +1,98 @@
+# Default values for ecommerce.
+# This is a YAML-formatted file.
+
+replicaCount: 1
+
+image:
+  repository: ecommerce-app
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 5000
+
+ingress:
+  enabled: true
+  className: ""
+  annotations: {}
+  hosts:
+    - host: ecommerce.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+
+# Database configuration
+database:
+  type: postgresql
+  host: postgres-service
+  port: 5432
+  name: ecommerce
+  username: admin
+  # password should be set via secret
+
+# Environment specific configurations
+env:
+  FLASK_ENV: production
+  SECRET_KEY: "change-me-in-production"
+
+# PostgreSQL subchart configuration
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: "postgres-password"
+    username: "admin"
+    password: "admin-password"
+    database: "ecommerce"
+  
+  primary:
+    persistence:
+      enabled: true
+      size: 8Gi
+
+# Redis configuration
+redis:
+  enabled: true
+  auth:
+    enabled: false
+
+# Monitoring
+monitoring:
+  enabled: false
+
+# Security
+podSecurityContext:
+  fsGroup: 2000
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

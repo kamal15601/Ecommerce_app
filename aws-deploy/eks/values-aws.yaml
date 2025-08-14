@@ -1,0 +1,184 @@
+environment: production
+replicaCount: 3
+
+image:
+  backend:
+    repository: YOUR-ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/ecommerce-backend
+    tag: "latest"
+    pullPolicy: Always
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 5000
+
+ingress:
+  enabled: true
+  className: "alb"
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:ACCOUNT-ID:certificate/CERT-ID
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS-1-2-2017-01
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '5'
+    alb.ingress.kubernetes.io/healthy-threshold-count: '2'
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: '3'
+    alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=60
+  hosts:
+    - host: ecommerce.yourdomain.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: ecommerce-tls
+      hosts:
+        - ecommerce.yourdomain.com
+
+# External PostgreSQL (RDS)
+postgresql:
+  enabled: false
+  external:
+    host: ecommerce-db.cluster-xyz.us-east-1.rds.amazonaws.com
+    port: 5432
+    database: ecommerce
+    username: ecommerce_user
+    # Password should be stored in Kubernetes secret
+
+# External Redis (ElastiCache)
+redis:
+  enabled: false
+  external:
+    host: ecommerce-redis.xyz.cache.amazonaws.com
+    port: 6379
+    # Password should be stored in Kubernetes secret
+
+# AWS-specific configurations
+aws:
+  region: us-east-1
+  accountId: "YOUR-ACCOUNT-ID"
+  
+# Storage configuration for AWS EBS
+persistence:
+  enabled: true
+  storageClass: gp3
+  size: 20Gi
+  annotations:
+    volume.beta.kubernetes.io/storage-class: gp3
+
+# Resource limits for AWS instances
+resources:
+  requests:
+    memory: "512Mi"
+    cpu: "250m"
+  limits:
+    memory: "1Gi"
+    cpu: "500m"
+
+# Horizontal Pod Autoscaler
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+# Service annotations for AWS Load Balancer
+serviceAnnotations:
+  service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+  service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+
+# Environment variables
+env:
+  - name: AWS_REGION
+    value: "us-east-1"
+  - name: AWS_DEFAULT_REGION
+    value: "us-east-1"
+  - name: FLASK_ENV
+    value: "production"
+  - name: DATABASE_HOST
+    valueFrom:
+      secretKeyRef:
+        name: ecommerce-secrets
+        key: database-host
+  - name: DATABASE_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: ecommerce-secrets
+        key: database-password
+  - name: REDIS_HOST
+    valueFrom:
+      secretKeyRef:
+        name: ecommerce-secrets
+        key: redis-host
+  - name: REDIS_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: ecommerce-secrets
+        key: redis-password
+  - name: SECRET_KEY
+    valueFrom:
+      secretKeyRef:
+        name: ecommerce-secrets
+        key: secret-key
+
+# Node affinity for multi-AZ deployment
+nodeAffinity:
+  preferredDuringSchedulingIgnoredDuringExecution:
+  - weight: 100
+    preference:
+      matchExpressions:
+      - key: kubernetes.io/arch
+        operator: In
+        values:
+        - amd64
+  - weight: 50
+    preference:
+      matchExpressions:
+      - key: node.kubernetes.io/instance-type
+        operator: In
+        values:
+        - t3.medium
+        - t3.large
+
+# Pod anti-affinity for high availability
+podAntiAffinity:
+  preferredDuringSchedulingIgnoredDuringExecution:
+  - weight: 100
+    podAffinityTerm:
+      labelSelector:
+        matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: In
+          values:
+          - ecommerce
+      topologyKey: kubernetes.io/hostname
+
+# Monitoring and observability
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    labels:
+      app: ecommerce
+    interval: 30s
+    path: /metrics
+
+# AWS CloudWatch logging
+logging:
+  enabled: true
+  logGroup: "/aws/eks/ecommerce-cluster/application"

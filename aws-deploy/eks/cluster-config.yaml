@@ -1,0 +1,107 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: ecommerce-cluster
+  region: us-east-1
+  version: "1.28"
+
+vpc:
+  cidr: 10.0.0.0/16
+  nat:
+    gateway: Single # Use single NAT gateway to reduce costs
+
+nodeGroups:
+  - name: ecommerce-workers
+    instanceType: t3.medium
+    desiredCapacity: 3
+    minSize: 2
+    maxSize: 10
+    volumeSize: 20
+    volumeType: gp3
+    availabilityZones: ["us-east-1a", "us-east-1b", "us-east-1c"]
+    ssh:
+      allow: true
+      publicKeyName: your-key-pair # Replace with your key pair name
+    iam:
+      withAddonPolicies:
+        imageBuilder: true
+        autoScaler: true
+        certManager: true
+        efs: true
+        ebs: true
+        albIngress: true
+        cloudWatch: true
+        externalDNS: true
+    tags:
+      Environment: production
+      Application: ecommerce
+      Team: platform
+
+# Managed node group for cost optimization
+managedNodeGroups:
+  - name: ecommerce-managed
+    instanceTypes: ["t3.medium", "t3.large"]
+    spot: true # Use spot instances for cost savings
+    desiredCapacity: 2
+    minSize: 1
+    maxSize: 5
+    volumeSize: 20
+    volumeType: gp3
+    availabilityZones: ["us-east-1a", "us-east-1b"]
+    iam:
+      withAddonPolicies:
+        imageBuilder: true
+        autoScaler: true
+        certManager: true
+        efs: true
+        ebs: true
+        albIngress: true
+        cloudWatch: true
+    tags:
+      Environment: production
+      Application: ecommerce
+      NodeType: spot
+
+addons:
+  - name: vpc-cni
+    version: latest
+  - name: coredns
+    version: latest
+  - name: kube-proxy
+    version: latest
+  - name: aws-ebs-csi-driver
+    version: latest
+
+cloudWatch:
+  clusterLogging:
+    enable: true
+    logTypes: ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+
+iam:
+  withOIDC: true
+  serviceAccounts:
+    - metadata:
+        name: aws-load-balancer-controller
+        namespace: kube-system
+      wellKnownPolicies:
+        awsLoadBalancerController: true
+    - metadata:
+        name: cluster-autoscaler
+        namespace: kube-system
+      wellKnownPolicies:
+        autoScaler: true
+    - metadata:
+        name: ecommerce-backend
+        namespace: ecommerce-prod
+      attachPolicyARNs:
+        - "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+        - "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+
+# Enable private endpoint access for security
+privateCluster:
+  enabled: false # Set to true for private clusters
+
+# Enable encryption
+secretsEncryption:
+  keyARN: arn:aws:kms:us-east-1:ACCOUNT-ID:key/KEY-ID # Replace with your KMS key

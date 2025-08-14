@@ -1,0 +1,6 @@
+Flask==2.0.1
+redis==4.0.2
+Flask-CORS==3.0.10
+prometheus-client==0.11.0
+pytest==6.2.5
+pytest-cov==2.12.1

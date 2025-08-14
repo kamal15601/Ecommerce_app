@@ -1,0 +1,21 @@
+apiVersion: v2
+name: ecommerce
+description: A Helm chart for E-Commerce application
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+
+dependencies: []
+
+keywords:
+  - ecommerce
+  - flask
+  - postgresql
+  - web-app
+
+maintainers:
+  - name: Developer
+    email: developer@example.com
+
+sources:
+  - https://github.com/your-org/ecommerce-app

@@ -1,0 +1,20 @@
+# ConfigMap for Staging
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  labels:
+    app: ecommerce-backend
+data:
+  DATABASE_URL: postgresql://admin:adminpass@ecommerce-db-service:5432/ecommerce
+  SECRET_KEY: stagingsecretkey
+  STRIPE_API_KEY: sk_test_xxx
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  labels:
+    app: ecommerce-frontend
+data:
+  REACT_APP_API_URL: http://staging-backend:5000

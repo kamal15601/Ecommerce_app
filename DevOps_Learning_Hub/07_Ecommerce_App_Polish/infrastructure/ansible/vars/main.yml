@@ -1,0 +1,51 @@
+---
+# Variables for the entire playbook
+
+# Common packages to install on all servers
+common_packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - python3-pip
+  - software-properties-common
+  - unzip
+  - vim
+  - wget
+
+# Environment settings
+environment: production
+app_name: ecommerce
+domain_name: ecommerce.example.com
+
+# Docker settings
+docker_compose_version: "2.0.1"
+docker_users:
+  - ubuntu
+  - "{{ ansible_user }}"
+
+# Firewall rules
+firewall_allowed_tcp_ports:
+  - 22   # SSH
+  - 80   # HTTP
+  - 443  # HTTPS
+
+# Users to create
+create_users:
+  - username: devops
+    groups: sudo
+    shell: /bin/bash
+  - username: monitoring
+    groups: docker
+    shell: /bin/bash
+
+# SSH keys to add
+ssh_public_keys:
+  - user: devops
+    key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQ... devops@example.com"
+  - user: monitoring
+    key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQ... monitoring@example.com"
+
+# Timezone setting
+timezone: UTC

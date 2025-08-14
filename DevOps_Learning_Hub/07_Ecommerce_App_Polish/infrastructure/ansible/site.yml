@@ -1,0 +1,58 @@
+---
+# Ansible playbook for setting up the e-commerce app infrastructure
+- name: Configure EC2 instances for e-commerce app
+  hosts: all
+  become: yes
+  vars_files:
+    - vars/main.yml
+
+  pre_tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+
+    - name: Install common packages
+      package:
+        name: "{{ common_packages }}"
+        state: present
+
+  roles:
+    - common
+    - docker
+    - monitoring
+
+- name: Configure Database Server
+  hosts: database
+  become: yes
+  vars_files:
+    - vars/main.yml
+    - vars/database.yml
+  
+  roles:
+    - database
+
+- name: Configure Web and Application Servers
+  hosts: webservers
+  become: yes
+  vars_files:
+    - vars/main.yml
+    - vars/application.yml
+  
+  roles:
+    - nginx
+    - application
+
+- name: Deploy Monitoring Infrastructure
+  hosts: monitoring
+  become: yes
+  vars_files:
+    - vars/main.yml
+    - vars/monitoring.yml
+  
+  roles:
+    - prometheus
+    - grafana
+    - elasticsearch
+    - kibana

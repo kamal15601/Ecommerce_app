@@ -1,0 +1,94 @@
+# Docker Compose for production
+version: '3.8'
+
+services:
+  db:
+    image: bitnami/postgresql:16.1.0
+    container_name: ecommerce-db-prod
+    environment:
+      POSTGRESQL_DATABASE: ecommerce
+      POSTGRESQL_USERNAME: admin
+      POSTGRESQL_PASSWORD: ${DB_PASSWORD}
+      POSTGRESQL_POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/bitnami/postgresql
+      - ../db/init.sql:/docker-entrypoint-initdb.d/custom-scripts/init.sql
+    networks:
+      - ecommerce-network
+    restart: unless-stopped
+
+  backend:
+    build: 
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: ecommerce-backend-prod
+    environment:
+      DATABASE_URL: postgresql://admin:${DB_PASSWORD}@db:5432/ecommerce
+      SECRET_KEY: ${SECRET_KEY}
+      FLASK_ENV: production
+      FLASK_APP: app.py
+      STRIPE_API_KEY: ${STRIPE_API_KEY}
+      LOG_LEVEL: INFO
+      PYTHONUNBUFFERED: 1
+    expose:
+      - "5000"
+    depends_on:
+      - db
+    networks:
+      - ecommerce-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  nginx:
+    image: nginxinc/nginx-unprivileged:1.25-alpine
+    container_name: ecommerce-nginx-prod
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - ecommerce-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: ecommerce-frontend-prod
+    environment:
+      - REACT_APP_API_URL=https://api.your-ecommerce-domain.com
+      - NODE_ENV=production
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - ecommerce-network
+    restart: unless-stopped
+
+  redis:
+    image: bitnami/redis:7.2.4
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      ALLOW_EMPTY_PASSWORD: "no"
+    container_name: ecommerce-redis
+    networks:
+      - ecommerce-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  ecommerce-network:
+    driver: bridge
