@@ -11,7 +11,9 @@ jwt = JWTManager()
 migrate = Migrate()
 
 def create_app():
-    app = Flask(__name__)
+    app = Flask(__name__, 
+                template_folder='../templates',
+                static_folder='../static')
     env = os.getenv('FLASK_ENV', 'development')
     app.config.from_pyfile(f'../config/{env}.py')
     db.init_app(app)

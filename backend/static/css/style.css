@@ -1,26 +1,29 @@
 body { 
-    font-family: Arial, sans-serif; 
-    margin: 2em; 
-    background: #f8f8f8; 
-    line-height: 1.6;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
 }
 
-h1, h2, h3 { color: #333; }
-
-nav {
-    background: #007bff;
-    padding: 1em;
-    margin: -2em -2em 2em -2em;
-    border-radius: 5px;
+.navbar-brand {
+    font-weight: bold;
 }
 
-nav a {
-    color: white;
-    text-decoration: none;
-    margin-right: 1em;
+.card {
+    transition: transform 0.2s ease-in-out;
 }
 
-nav a:hover { text-decoration: underline; }
+.card:hover {
+    transform: translateY(-5px);
+}
+
+.card-img-top {
+    height: 200px;
+    object-fit: cover;
+}
+
+footer {
+    margin-top: auto;
+}
 
 .products {
     display: grid;
